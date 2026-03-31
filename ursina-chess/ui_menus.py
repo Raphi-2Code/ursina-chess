@@ -1367,7 +1367,8 @@ class FenEditorDialog:
     def _submit(self):
         fen, error = self._prepare_fen_for_export()
         if error:
-            self._set_status(error)
+            duration = 2.0 if error == "Position is not valid for play." else None
+            self._set_status(error, duration=duration)
             return
 
         submit_error = self.on_submit(fen) if self.on_submit else None
