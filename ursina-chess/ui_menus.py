@@ -2366,11 +2366,17 @@ class GameHUD:
         if self.status_text:
             self.status_text.text = text
 
-    def update_clocks(self, white_str: str, black_str: str):
+    def update_clocks(
+        self,
+        white_str: str,
+        black_str: str,
+        white_label: str = "White",
+        black_label: str = "Black",
+    ):
         if self.white_clock_text:
-            self.white_clock_text.text = f"White: {white_str}"
+            self.white_clock_text.text = f"{white_label}: {white_str}"
         if self.black_clock_text:
-            self.black_clock_text.text = f"Black: {black_str}"
+            self.black_clock_text.text = f"{black_label}: {black_str}"
 
     def update_move_list(self, moves: list[str]):
         if not self.move_list_text:
