@@ -4,7 +4,7 @@ New ursina chess application
 
 I will add an AI benchmarking leaderboard tomorrow:
 <img width="3134" height="1914" alt="image" src="https://github.com/user-attachments/assets/05760e48-126f-4d73-96b3-daccf8772f81" />
-
+You can replay the parties. I have to change a lot of files and I have to setup git later.
 
 <img width="4064" height="2392" alt="B6467C3D-828B-4C8D-8722-ACC25B873665" src="https://github.com/user-attachments/assets/d40cb886-fc8d-476e-9aa1-355ed0e2ecaf" />
 <img width="4064" height="2392" alt="6CBFE385-B5C8-4130-A9A7-77C4BD10A7E7" src="https://github.com/user-attachments/assets/28386da7-3cbc-492f-b38d-35b39a8f9b07" />
