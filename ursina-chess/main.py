@@ -144,14 +144,22 @@ class ChessApp:
 
         # HUD updates
         if self.hud:
+            white_label, black_label = self._hud_side_labels()
             self.hud.update_status(self.gs.status_text)
             if self.gs.base_time > 0:
                 self.hud.update_clocks(
                     self.gs.format_clock(self.gs.white_clock),
                     self.gs.format_clock(self.gs.black_clock),
+                    white_label=white_label,
+                    black_label=black_label,
                 )
             else:
-                self.hud.update_clocks("--:--", "--:--")
+                self.hud.update_clocks(
+                    "--:--",
+                    "--:--",
+                    white_label=white_label,
+                    black_label=black_label,
+                )
             self.hud.update_move_list(self.gs.move_list)
             self.hud.tick()
 
@@ -646,6 +654,19 @@ class ChessApp:
             "back_to_menu": self._back_to_menu,
         })
         self.hud.update_board_anchor(self.board_view)
+        white_label, black_label = self._hud_side_labels()
+        self.hud.update_status(self.gs.status_text)
+        self.hud.update_clocks(
+            self.gs.format_clock(self.gs.white_clock) if self.gs.base_time > 0 else "--:--",
+            self.gs.format_clock(self.gs.black_clock) if self.gs.base_time > 0 else "--:--",
+            white_label=white_label,
+            black_label=black_label,
+        )
+
+    def _hud_side_labels(self) -> tuple[str, str]:
+        if self.gs.mode == GameMode.MULTIPLAYER:
+            return self.gs.white_name, self.gs.black_name
+        return "White", "Black"
 
     def _teardown_game(self):
         self._invalidate_engine_request()
