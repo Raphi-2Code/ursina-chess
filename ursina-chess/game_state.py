@@ -167,9 +167,15 @@ class GameState:
     def turn(self) -> chess.Color:
         return self.board.turn
 
+    def side_label(self, color: chess.Color) -> str:
+        """Return the visible label for a side in the current game mode."""
+        if self.mode == GameMode.MULTIPLAYER:
+            return self.white_name if color == chess.WHITE else self.black_name
+        return "White" if color == chess.WHITE else "Black"
+
     @property
     def turn_name(self) -> str:
-        return "White" if self.board.turn == chess.WHITE else "Black"
+        return self.side_label(self.board.turn)
 
     def is_human_turn(self) -> bool:
         """In engine mode, return True only on the human's turn."""
@@ -383,7 +389,7 @@ class GameState:
             return ""
         b = self.board
         if b.is_checkmate():
-            winner = "Black" if b.turn == chess.WHITE else "White"
+            winner = self.side_label(chess.BLACK if b.turn == chess.WHITE else chess.WHITE)
             return f"Checkmate – {winner} wins"
         if b.is_stalemate():
             return "Stalemate – Draw"
@@ -396,13 +402,13 @@ class GameState:
         if self.result == "1/2-1/2":
             return "Draw by agreement"
         if self.resigned_color is not None:
-            resigner = "White" if self.resigned_color == chess.WHITE else "Black"
-            winner = "Black" if self.resigned_color == chess.WHITE else "White"
+            resigner = self.side_label(self.resigned_color)
+            winner = self.side_label(chess.BLACK if self.resigned_color == chess.WHITE else chess.WHITE)
             return f"{resigner} resigns - {winner} wins"
         if self.base_time > 0 and self.white_clock <= 0:
-            return "White's time ran out – Black wins"
+            return f"{self.side_label(chess.WHITE)} ran out of time – {self.side_label(chess.BLACK)} wins"
         if self.base_time > 0 and self.black_clock <= 0:
-            return "Black's time ran out – White wins"
+            return f"{self.side_label(chess.BLACK)} ran out of time – {self.side_label(chess.WHITE)} wins"
         return self.result
 
     # ── PGN ───────────────────────────────────────────────────────────────────
