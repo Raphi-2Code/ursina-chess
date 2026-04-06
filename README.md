@@ -1,6 +1,8 @@
 # ursina-chess
 New ursina chess application
 
+<img width="3158" height="1880" alt="5A316735-34F5-413C-A7F4-CE5401F561BA" src="https://github.com/user-attachments/assets/627a9354-2862-494d-bcb4-5833b183e361" />
+
 
 I will add an AI benchmarking leaderboard tomorrow:
 <img width="3134" height="1914" alt="image" src="https://github.com/user-attachments/assets/05760e48-126f-4d73-96b3-daccf8772f81" />
