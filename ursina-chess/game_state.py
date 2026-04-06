@@ -18,6 +18,7 @@ class GameMode:
     LOCAL       = "local"
     VS_ENGINE   = "vs_engine"
     MULTIPLAYER = "multiplayer"
+    REVIEW      = "review"
 
 
 class GameState:
@@ -169,7 +170,7 @@ class GameState:
 
     def side_label(self, color: chess.Color) -> str:
         """Return the visible label for a side in the current game mode."""
-        if self.mode == GameMode.MULTIPLAYER:
+        if self.mode in {GameMode.MULTIPLAYER, GameMode.REVIEW}:
             return self.white_name if color == chess.WHITE else self.black_name
         return "White" if color == chess.WHITE else "Black"
 
@@ -188,6 +189,8 @@ class GameState:
         """Return the colours the local user may act for."""
         if self.mode == GameMode.LOCAL:
             return (chess.WHITE, chess.BLACK)
+        if self.mode == GameMode.REVIEW:
+            return tuple()
         return (self.player_color,)
 
     def can_control_color(self, color: chess.Color) -> bool:

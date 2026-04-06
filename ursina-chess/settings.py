@@ -10,6 +10,8 @@ APP_DIR         = os.path.dirname(os.path.abspath(__file__))
 ENGINES_DIR     = os.path.join(APP_DIR, "engines", "stockfish")
 MANIFEST_PATH   = os.path.join(ENGINES_DIR, "engine_manifest.json")
 PGN_DIR         = os.path.join(APP_DIR, "saved_games")
+BENCHMARK_DIR   = os.path.join(APP_DIR, "benchmark_data")
+BENCHMARK_PGN_PATH = os.path.join(BENCHMARK_DIR, "llm_benchmark.pgn")
 
 # ─── Window ───────────────────────────────────────────────────────────────────
 WINDOW_TITLE    = "Ursina Chess"

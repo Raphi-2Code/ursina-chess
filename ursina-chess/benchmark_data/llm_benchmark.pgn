@@ -1,0 +1,71 @@
+
+[Event "ChatGPT vs Grok 4.20"]
+[Site "Chat"]
+[Date "2026.03.13"]
+[Round "1"]
+[White "ChatGPT 5.4 Pro"]
+[Black "Grok 4.20"]
+[Result "1-0"]
+[Opening "Sicilian Defense: Najdorf Variation"]
+[ECO "B90"]
+[Termination "Black made an illegal move"]
+
+1. e4 c5 2. Nf3 d6 3. d4 cxd4 4. Nxd4 Nf6 5. Nc3 a6 6. Bg5 e6 7. f4 Be7 8. Qf3
+Qc7 9. O-O-O Nbd7 10. Bd3 b5 11. Rhe1 Bb7 12. Qg3 b4 13. Nd5 exd5 14. exd5 Nxd5
+15. Bxe7 Nxe7 16. Qxg7 Rg8 17. Qxh7 Rxg2 18. Kb1 Qxc2+ 19. Bxc2 Rxc2 20. Qg8+
+1-0
+
+[Event "Gemma 4 vs GPT-OSS-120b"]
+[Site "Chat"]
+[Date "2024.05.22"]
+[Round "1"]
+[White "Gemma 4"]
+[Black "GPT-OSS-120b"]
+[Result "1-0"]
+[Opening "Ruy Lopez: Morphy Defense"]
+[ECO "C60"]
+[Termination "Black made an illegal move"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 6. Re1 O-O 7. c3 b5 8. Bc2
+Bb7 9. d4 exd4 10. cxd4 1-0
+
+[Event "GPT-5.3 Instant vs ChatGPT 5.4 Pro"]
+[Site "Chat"]
+[Date "2026.04.04"]
+[Round "1"]
+[White "GPT-5.3 Instant"]
+[Black "ChatGPT 5.4 Pro"]
+[Result "1/2-1/2"]
+[Opening "Sicilian Defense: Najdorf Variation"]
+[ECO "B90"]
+[Termination "Draw by threefold repetition"]
+
+1. e4 c5 2. Nf3 d6 3. d4 cxd4 4. Nxd4 Nf6 5. Nc3 a6
+6. Bg5 e6 7. f4 Be7 8. Qf3 Qc7 9. O-O-O Nbd7 10. Bd3 b5
+11. Rhe1 Bb7 12. Qg3 Nc5 13. e5 Nxd3+ 14. Rxd3 dxe5
+15. fxe5 Nh5 16. Qg4 Bxg5+ 17. Qxg5 g6 18. Ne4 Bxe4
+19. Rxe4 O-O 20. g4 Ng7 21. Qf6 Rac8 22. Rc3 Qb7
+23. Ree3 Qh1+ 24. Kd2 Qxh2+ 25. Ne2 Rfd8+ 26. Red3 Rxd3+
+27. cxd3 Rxc3 28. bxc3 Qh6+ 29. Qf4 Qxf4+ 30. Nxf4 h5
+31. gxh5 gxh5 32. Nxh5 Nxh5 33. Ke3 f6 34. exf6 Nxf6
+35. Kf4 Nd5+ 36. Ke5 Nxc3 37. Kxe6 Nxa2 38. d4 b4
+39. d5 b3 40. d6 b2 41. d7 b1=Q 42. d8=Q+ Kh7
+43. Qh4+ Kg8 44. Qd8+ Kh7 45. Qh4+ Kg8
+46. Qd8+ Kh7 47. Qh4+ 1/2-1/2
+
+[Event "GPT-OSS-120b vs Grok 4.20"]
+[Site "Chat"]
+[Date "2026.03.13"]
+[Round "1"]
+[White "GPT-OSS-120b"]
+[Black "Grok 4.20"]
+[Result "0-1"]
+[Termination "Win for Black (Grok 4.20 multi agent beta 0309)"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bc4 Nf6 4. Ng5 d5 5. Nxf7 Kxf7 6. Qh5+ Ke6 7. Bxd5+ Nxd5
+8. Qxe5+ Kxe5 9. Nc3 Kf6 10. Nxd5+ Ke6 11. Nf4+ Kd6 12. O-O Be7 13. e5+ Nxe5
+14. Ne6 Nc6 15. Nxd8 Bxd8 16. d4 Bf6 17. d5 Nd4 18. c3 Ne2+ 19. Kh1 Ng3+ 20.
+hxg3 Re8 21. Re1 Rxe1+ 22. Kh2 Re2 23. Bf4+ Kc5 24. Bd6+ Kxd6 25. Re1 Rxe1 26.
+c4 Kc5 27. a4 b5 28. cxb5 Kd6 29. b6 Kd7 30. bxa7 Kd8 31. d6 cxd6 32. a5 Rxa7
+33. b4 Rxa5 34. bxa5 Kc7 35. a6 Kb6 36. a7 Kxa7 37. f4 d5 38. g4 h5 39. gxh5 d4
+40. Kg3 d3 41. Kf2 d2 42. Kg3 d1=Q 43. Kf2 Qd2+ 44. Kg3 Qxg2+ 45. Kxg2 0-1

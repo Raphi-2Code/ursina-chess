@@ -31,6 +31,7 @@ except ImportError:
     fxaa_shader = None
 
 # ── Project modules ───────────────────────────────────────────────────────────
+from benchmark_manager import import_benchmark_game, load_benchmark_snapshot
 from game_state import GameState, GameMode
 from board_view import BoardView
 from engine_manager import EngineManager, find_engine_path, download_stockfish, set_engine_path
@@ -38,7 +39,7 @@ from network_manager import NetworkManager
 from ui_menus import (
     MainMenu, SettingsPanel, ColorChooser, TimeControlChooser,
     PromotionDialog, JoinDialog, HostDialog, TextImportDialog, FenEditorDialog, SavedGamesDialog,
-    EngineDownloadDialog, GameHUD, ResultBanner, ConfirmBanner,
+    BenchmarkDashboard, EngineDownloadDialog, GameHUD, ResultBanner, ConfirmBanner,
 )
 
 
@@ -60,6 +61,7 @@ class ChessApp:
         self.main_menu: MainMenu | None = None
         self.hud: GameHUD | None = None
         self.settings_panel: SettingsPanel | None = None
+        self._benchmark_dashboard: BenchmarkDashboard | None = None
         self.result_banner: ResultBanner | ConfirmBanner | None = None
         self._fen_editor_dialog: FenEditorDialog | None = None
 
@@ -87,6 +89,9 @@ class ChessApp:
         self._mp_takeback_request_pending = False
         self._window_size = self._get_window_size()
         self._restart_state: dict | None = None
+        self._review_move_list: list[str] = []
+        self._review_final_result: str | None = None
+        self._benchmark_dashboard_message: str = ""
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -145,6 +150,7 @@ class ChessApp:
         # HUD updates
         if self.hud:
             white_label, black_label = self._hud_side_labels()
+            display_moves, current_ply = self._hud_move_list_payload()
             self.hud.update_status(self.gs.status_text)
             if self.gs.base_time > 0:
                 self.hud.update_clocks(
@@ -160,11 +166,11 @@ class ChessApp:
                     white_label=white_label,
                     black_label=black_label,
                 )
-            self.hud.update_move_list(self.gs.move_list)
+            self.hud.update_move_list(display_moves, current_ply=current_ply)
             self.hud.tick()
 
         # Result detection
-        if self.gs.is_game_over() and not self._result_shown:
+        if self.gs.is_game_over() and not self._result_shown and self.gs.mode != GameMode.REVIEW:
             self._result_shown = True
             self.gs.clock_running = False
             self._clear_board_selection()
@@ -186,6 +192,7 @@ class ChessApp:
     # ── Main menu ─────────────────────────────────────────────────────────────
 
     def _show_main_menu(self):
+        self._dismiss_benchmark_dashboard()
         self._teardown_game()
         self._restart_state = None
         self.main_menu = MainMenu({
@@ -193,6 +200,7 @@ class ChessApp:
             "start_from_fen":  self._on_start_from_fen,
             "start_from_pgn":  self._on_start_from_pgn,
             "open_saved_pgn":  self._on_open_saved_pgn,
+            "ai_benchmarking": self._on_ai_benchmarking,
             "vs_engine":       self._on_vs_engine,
             "host":            self._on_host_mp,
             "join":            self._on_join_mp,
@@ -300,6 +308,92 @@ class ChessApp:
             return str(exc)
 
         return None
+
+    def _on_ai_benchmarking(self):
+        self._hide_main_menu()
+        self._show_benchmark_dashboard()
+
+    def _show_benchmark_dashboard(self, status_message: str = ""):
+        self._dismiss_benchmark_dashboard()
+
+        leaderboard = []
+        games = []
+        error_message = ""
+        try:
+            snapshot = load_benchmark_snapshot()
+            leaderboard = snapshot.leaderboard
+            games = snapshot.games
+        except (OSError, ValueError) as exc:
+            error_message = str(exc)
+
+        self._benchmark_dashboard = BenchmarkDashboard(
+            leaderboard=leaderboard,
+            games=games,
+            on_import=self._open_benchmark_import_dialog,
+            on_open_game=self._open_benchmark_game,
+            on_back=self._back_from_benchmark_dashboard,
+            status_message=status_message,
+            error_message=error_message,
+        )
+
+    def _dismiss_benchmark_dashboard(self):
+        if self._benchmark_dashboard:
+            self._benchmark_dashboard.destroy_panel()
+            self._benchmark_dashboard = None
+
+    def _back_from_benchmark_dashboard(self):
+        self._dismiss_benchmark_dashboard()
+        self._show_main_menu()
+
+    def _open_benchmark_import_dialog(self):
+        self._dismiss_benchmark_dashboard()
+        self._benchmark_dashboard_message = ""
+        TextImportDialog(
+            title="Import Benchmark PGN",
+            help_text="Paste one LLM-vs-LLM PGN. The app will validate it, append it to the benchmark file, and rebuild the Elo leaderboard.",
+            on_submit=self._try_import_benchmark_pgn,
+            on_back=None,
+            submit_label="Import",
+            max_lines=14,
+            character_limit=20000,
+            panel_scale=(0.90, 0.74),
+            input_scale=(0.78, 0.36),
+            input_offset_y=-0.06,
+            on_destroy=self._return_to_benchmark_dashboard,
+        )
+
+    def _try_import_benchmark_pgn(self, pgn_text: str) -> str | None:
+        try:
+            record = import_benchmark_game(pgn_text)
+        except (OSError, ValueError) as exc:
+            return str(exc)
+
+        self._benchmark_dashboard_message = (
+            f"Imported {record.white} vs {record.black}. Leaderboard rebuilt."
+        )
+        return None
+
+    def _return_to_benchmark_dashboard(self):
+        message = self._benchmark_dashboard_message
+        self._benchmark_dashboard_message = ""
+        self._show_benchmark_dashboard(status_message=message)
+
+    def _open_benchmark_game(self, record):
+        self._dismiss_benchmark_dashboard()
+        self._start_benchmark_review(record.pgn_text)
+
+    def _start_benchmark_review(self, pgn_text: str):
+        self._teardown_game()
+        self.gs.load_pgn(pgn_text, mode=GameMode.REVIEW, time_control="No limit")
+        self._review_move_list = list(self.gs.move_list)
+        self._review_final_result = self.gs.result
+        while self.gs.can_undo():
+            self.gs.undo_move()
+        self.gs.clock_running = False
+        self._restart_state = {"kind": "benchmark_review", "pgn_text": pgn_text}
+        self._setup_board_and_hud()
+        self._restore_review_result_if_needed()
+        self._result_shown = False
 
     # ── Engine game ───────────────────────────────────────────────────────────
 
@@ -652,7 +746,9 @@ class ChessApp:
             "save_pgn":     self._save_pgn,
             "restart":      self._restart,
             "back_to_menu": self._back_to_menu,
-        })
+        }, button_labels=self._hud_button_labels())
+        if self.gs.mode == GameMode.REVIEW:
+            self.board_view.set_input_enabled(False)
         self.hud.update_board_anchor(self.board_view)
         white_label, black_label = self._hud_side_labels()
         self.hud.update_status(self.gs.status_text)
@@ -664,15 +760,27 @@ class ChessApp:
         )
 
     def _hud_side_labels(self) -> tuple[str, str]:
-        if self.gs.mode == GameMode.MULTIPLAYER:
+        if self.gs.mode in {GameMode.MULTIPLAYER, GameMode.REVIEW}:
             return self.gs.white_name, self.gs.black_name
         return "White", "Black"
+
+    def _hud_move_list_payload(self) -> tuple[list[str], int | None]:
+        if self.gs.mode == GameMode.REVIEW and self._review_move_list:
+            return self._review_move_list, len(self.gs.move_list)
+        return self.gs.move_list, None
+
+    def _hud_button_labels(self) -> list[str]:
+        if self.gs.mode == GameMode.REVIEW:
+            return ["Undo", "Redo", "Flip", "Restart", "Menu"]
+        return ["Undo", "Redo", "Flip", "Resign", "Draw", "FEN", "PGN", "Restart", "Menu"]
 
     def _teardown_game(self):
         self._invalidate_engine_request()
         self._dismiss_fen_editor_dialog()
         self._dismiss_promotion_dialog()
         self._mp_takeback_request_pending = False
+        self._review_move_list = []
+        self._review_final_result = None
         self.gs.clear_premove()
         if self.board_view:
             self.board_view.destroy()
@@ -885,6 +993,9 @@ class ChessApp:
         if self._promotion_dialog:
             return
 
+        if self.gs.mode == GameMode.REVIEW:
+            return
+
         if self.gs.is_game_over():
             return
 
@@ -1024,6 +1135,7 @@ class ChessApp:
             self.board_view.refresh()
         if self.hud:
             self.hud.update_eval("")
+        self._restore_review_result_if_needed()
 
         if self.gs.mode == GameMode.VS_ENGINE and not self.gs.is_human_turn():
             if self.engine.is_thinking:
@@ -1064,12 +1176,23 @@ class ChessApp:
             self.board_view.refresh()
         if self.hud:
             self.hud.update_eval("")
+        self._restore_review_result_if_needed()
 
         if self.gs.mode == GameMode.VS_ENGINE and not self.gs.is_human_turn():
             if self.engine.is_thinking:
                 self._deferred_engine_request = True
             else:
                 self._request_engine_move()
+
+    def _restore_review_result_if_needed(self):
+        if self.gs.mode != GameMode.REVIEW:
+            return
+        if (
+            self._review_final_result
+            and len(self.gs.move_list) == len(self._review_move_list)
+            and not self.gs.result
+        ):
+            self.gs.result = self._review_final_result
 
     def _propose_takeback(self):
         if not self.net.connected:
@@ -1096,6 +1219,8 @@ class ChessApp:
     def _resign(self):
         if self._promotion_dialog:
             return
+        if self.gs.mode == GameMode.REVIEW:
+            return
         if self.gs.is_game_over():
             return
         if self.gs.mode == GameMode.MULTIPLAYER:
@@ -1109,6 +1234,8 @@ class ChessApp:
 
     def _offer_draw(self):
         if self._promotion_dialog:
+            return
+        if self.gs.mode == GameMode.REVIEW:
             return
         if self.gs.is_game_over():
             return
@@ -1149,6 +1276,10 @@ class ChessApp:
     def _save_pgn(self):
         if self._promotion_dialog:
             return
+        if self.gs.mode == GameMode.REVIEW:
+            if self.hud:
+                self.hud.update_eval("PGN export is disabled in review mode", duration=2.0)
+            return
         path = self.gs.save_pgn()
         print(f"[PGN] Saved to {path}")
         if self.hud:
@@ -1172,6 +1303,8 @@ class ChessApp:
                 restart_state["player_color"],
                 restart_state["time_control"],
             )
+        elif kind == "benchmark_review":
+            self._start_benchmark_review(restart_state["pgn_text"])
         elif kind == "fen":
             self._start_from_fen_game(restart_state["fen"])
         elif kind == "pgn":

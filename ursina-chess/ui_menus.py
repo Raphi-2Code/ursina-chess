@@ -20,6 +20,7 @@ from settings import (
     TIME_CONTROLS, BOARD_SIZE, SQUARE_SIZE, BOARD_ORIGIN_X, BOARD_ORIGIN_Y,
     LIGHT_COLOR, DARK_COLOR, PIECE_UNICODE,
     DEFAULT_SKILL_LEVEL, DEFAULT_ENGINE_DEPTH, DEFAULT_ENGINE_TIME, PGN_DIR,
+    BENCHMARK_PGN_PATH,
 )
 
 
@@ -115,7 +116,7 @@ class MainMenu:
         """
         callbacks keys:
             local, start_from_fen, start_from_pgn, open_saved_pgn,
-            vs_engine, host, join, settings, exit
+            ai_benchmarking, vs_engine, host, join, settings, exit
         """
         self.entities: list[Entity] = []
         self.callbacks = callbacks
@@ -138,6 +139,7 @@ class MainMenu:
             ("Start From FEN",      self.callbacks.get("start_from_fen")),
             ("Start From PGN",      self.callbacks.get("start_from_pgn")),
             ("Open Saved PGN",      self.callbacks.get("open_saved_pgn")),
+            ("AI Benchmarking",     self.callbacks.get("ai_benchmarking")),
             ("Play vs Engine",      self.callbacks.get("vs_engine")),
             ("Host Multiplayer",    self.callbacks.get("host")),
             ("Join Multiplayer",    self.callbacks.get("join")),
@@ -1706,6 +1708,404 @@ class SavedGamesDialog:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+#  BENCHMARK DASHBOARD
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class BenchmarkDashboard:
+    """Overlay showing the LLM leaderboard and imported benchmark games."""
+
+    LEADERBOARD_PAGE_SIZE = 8
+    GAMES_PAGE_SIZE = 6
+
+    def __init__(
+        self,
+        leaderboard,
+        games,
+        on_import,
+        on_open_game,
+        on_back,
+        *,
+        status_message: str = "",
+        error_message: str = "",
+    ):
+        self.leaderboard = list(leaderboard)
+        self.games = list(reversed(list(games)))
+        self.on_import = on_import
+        self.on_open_game = on_open_game
+        self.on_back = on_back
+        self.status_message = status_message
+        self.error_message = error_message
+        self.leaderboard_page = 0
+        self.games_page = 0
+
+        self.entities: list[Entity] = []
+        self.leaderboard_entities: list[Entity] = []
+        self.game_entities: list[Entity] = []
+        self.leaderboard_page_text: Text | None = None
+        self.games_page_text: Text | None = None
+        self.leaderboard_prev_button: Button | None = None
+        self.leaderboard_next_button: Button | None = None
+        self.games_prev_button: Button | None = None
+        self.games_next_button: Button | None = None
+
+        self._build()
+
+    def _build(self):
+        bg = Entity(parent=camera.ui, model="quad", color=color.rgba(0, 0, 0, 0.7),
+                    scale=(2, 2), z=0.5)
+        self.entities.append(bg)
+
+        panel = Entity(parent=camera.ui, model="quad", color=color.dark_gray,
+                       scale=(1.34, 0.82), z=0.4)
+        self.entities.append(panel)
+
+        title = Text(
+            text="AI Benchmarking",
+            parent=camera.ui,
+            scale=1.8,
+            position=(0, 0.31),
+            origin=(0, 0),
+            z=0.3,
+            color=color.white,
+        )
+        self.entities.append(title)
+
+        source_text = Text(
+            text=f"Source: {Path(BENCHMARK_PGN_PATH).name}",
+            parent=camera.ui,
+            scale=0.9,
+            position=(0, 0.26),
+            origin=(0, 0),
+            z=0.3,
+            color=color.light_gray,
+        )
+        self.entities.append(source_text)
+
+        if self.status_message:
+            status = Text(
+                text=_wrap_ui_text(self.status_message, 72),
+                parent=camera.ui,
+                scale=0.88,
+                position=(0, 0.21),
+                origin=(0, 0),
+                z=0.3,
+                color=color.azure,
+            )
+            self.entities.append(status)
+
+        if self.error_message:
+            error = Text(
+                text=_wrap_ui_text(self.error_message, 72),
+                parent=camera.ui,
+                scale=0.88,
+                position=(0, 0.16),
+                origin=(0, 0),
+                z=0.3,
+                color=color.rgb(1.0, 0.45, 0.45),
+            )
+            self.entities.append(error)
+
+        leaderboard_title = Text(
+            text="Leaderboard",
+            parent=camera.ui,
+            scale=1.15,
+            position=(-0.33, 0.11),
+            origin=(0, 0),
+            z=0.3,
+            color=color.white,
+        )
+        self.entities.append(leaderboard_title)
+
+        leaderboard_header = Text(
+            text="Rank  Model               Elo   G  W  D  L",
+            parent=camera.ui,
+            scale=0.82,
+            position=(-0.33, 0.07),
+            origin=(-0.5, 0.5),
+            z=0.3,
+            color=color.light_gray,
+        )
+        self.entities.append(leaderboard_header)
+
+        games_title = Text(
+            text="Imported Games",
+            parent=camera.ui,
+            scale=1.15,
+            position=(0.31, 0.11),
+            origin=(0, 0),
+            z=0.3,
+            color=color.white,
+        )
+        self.entities.append(games_title)
+
+        games_header = Text(
+            text="Open a benchmark PGN in read-only review mode",
+            parent=camera.ui,
+            scale=0.82,
+            position=(0.31, 0.07),
+            origin=(0, 0),
+            z=0.3,
+            color=color.light_gray,
+        )
+        self.entities.append(games_header)
+
+        self.leaderboard_page_text = Text(
+            text="",
+            parent=camera.ui,
+            scale=0.82,
+            position=(-0.33, -0.23),
+            origin=(0, 0),
+            z=0.3,
+            color=color.light_gray,
+        )
+        self.entities.append(self.leaderboard_page_text)
+
+        self.games_page_text = Text(
+            text="",
+            parent=camera.ui,
+            scale=0.82,
+            position=(0.31, -0.23),
+            origin=(0, 0),
+            z=0.3,
+            color=color.light_gray,
+        )
+        self.entities.append(self.games_page_text)
+
+        self.leaderboard_prev_button = Button(
+            text="Prev",
+            parent=camera.ui,
+            scale=(0.12, 0.04),
+            position=(-0.40, -0.30),
+            z=0.3,
+            color=color.gray,
+            on_click=Func(self._change_leaderboard_page, -1),
+        )
+        self.entities.append(self.leaderboard_prev_button)
+
+        self.leaderboard_next_button = Button(
+            text="Next",
+            parent=camera.ui,
+            scale=(0.12, 0.04),
+            position=(-0.26, -0.30),
+            z=0.3,
+            color=color.gray,
+            on_click=Func(self._change_leaderboard_page, 1),
+        )
+        self.entities.append(self.leaderboard_next_button)
+
+        self.games_prev_button = Button(
+            text="Prev",
+            parent=camera.ui,
+            scale=(0.12, 0.04),
+            position=(0.20, -0.30),
+            z=0.3,
+            color=color.gray,
+            on_click=Func(self._change_games_page, -1),
+        )
+        self.entities.append(self.games_prev_button)
+
+        self.games_next_button = Button(
+            text="Next",
+            parent=camera.ui,
+            scale=(0.12, 0.04),
+            position=(0.34, -0.30),
+            z=0.3,
+            color=color.gray,
+            on_click=Func(self._change_games_page, 1),
+        )
+        self.entities.append(self.games_next_button)
+
+        import_button = Button(
+            text="Import PGN",
+            parent=camera.ui,
+            scale=(0.16, 0.045),
+            position=(-0.08, -0.36),
+            z=0.3,
+            color=color.azure,
+            on_click=Func(self._import_pgn),
+        )
+        self.entities.append(import_button)
+
+        back_button = Button(
+            text="Back",
+            parent=camera.ui,
+            scale=(0.16, 0.045),
+            position=(0.10, -0.36),
+            z=0.3,
+            color=color.gray,
+            on_click=Func(self._go_back),
+        )
+        self.entities.append(back_button)
+
+        self._refresh_leaderboard_page()
+        self._refresh_games_page()
+
+    def _change_leaderboard_page(self, delta: int):
+        max_page = max(0, (len(self.leaderboard) - 1) // self.LEADERBOARD_PAGE_SIZE)
+        self.leaderboard_page = min(max(self.leaderboard_page + delta, 0), max_page)
+        self._refresh_leaderboard_page()
+
+    def _change_games_page(self, delta: int):
+        max_page = max(0, (len(self.games) - 1) // self.GAMES_PAGE_SIZE)
+        self.games_page = min(max(self.games_page + delta, 0), max_page)
+        self._refresh_games_page()
+
+    def _refresh_leaderboard_page(self):
+        for entity in self.leaderboard_entities:
+            destroy(entity)
+        self.leaderboard_entities.clear()
+
+        page_count = max(1, (len(self.leaderboard) - 1) // self.LEADERBOARD_PAGE_SIZE + 1)
+        if self.leaderboard_page_text:
+            self.leaderboard_page_text.text = f"Page {self.leaderboard_page + 1}/{page_count}"
+
+        if not self.leaderboard:
+            empty_text = Text(
+                text="No benchmark results yet.",
+                parent=camera.ui,
+                scale=0.9,
+                position=(-0.33, 0.00),
+                origin=(0, 0),
+                z=0.3,
+                color=color.white,
+            )
+            self.leaderboard_entities.append(empty_text)
+        else:
+            start = self.leaderboard_page * self.LEADERBOARD_PAGE_SIZE
+            page_entries = self.leaderboard[start:start + self.LEADERBOARD_PAGE_SIZE]
+            for index, entry in enumerate(page_entries):
+                button = Button(
+                    text=self._format_leaderboard_label(entry),
+                    parent=camera.ui,
+                    scale=(0.50, 0.048),
+                    position=(-0.33, 0.02 - index * 0.055),
+                    origin=(0, 0),
+                    z=0.3,
+                    color=color.black66,
+                    highlight_color=color.black66,
+                )
+                button.disabled = True
+                button.ignore_input = True
+                self.leaderboard_entities.append(button)
+
+        self._set_nav_button_state(
+            self.leaderboard_prev_button,
+            enabled=self.leaderboard_page > 0,
+            active_color=color.gray,
+        )
+        self._set_nav_button_state(
+            self.leaderboard_next_button,
+            enabled=(self.leaderboard_page + 1) * self.LEADERBOARD_PAGE_SIZE < len(self.leaderboard),
+            active_color=color.gray,
+        )
+
+    def _refresh_games_page(self):
+        for entity in self.game_entities:
+            destroy(entity)
+        self.game_entities.clear()
+
+        page_count = max(1, (len(self.games) - 1) // self.GAMES_PAGE_SIZE + 1)
+        if self.games_page_text:
+            self.games_page_text.text = f"Page {self.games_page + 1}/{page_count}"
+
+        if not self.games:
+            empty_text = Text(
+                text="No benchmark games imported yet.",
+                parent=camera.ui,
+                scale=0.9,
+                position=(0.31, 0.00),
+                origin=(0, 0),
+                z=0.3,
+                color=color.white,
+            )
+            self.game_entities.append(empty_text)
+        else:
+            start = self.games_page * self.GAMES_PAGE_SIZE
+            page_games = self.games[start:start + self.GAMES_PAGE_SIZE]
+            for index, record in enumerate(page_games):
+                button = Button(
+                    text=self._format_game_label(record),
+                    parent=camera.ui,
+                    scale=(0.50, 0.075),
+                    position=(0.31, 0.00 - index * 0.085),
+                    origin=(0, 0),
+                    z=0.3,
+                    color=color.black66,
+                    highlight_color=color.gray,
+                    on_click=Func(self._open_game, record),
+                )
+                self.game_entities.append(button)
+
+        self._set_nav_button_state(
+            self.games_prev_button,
+            enabled=self.games_page > 0,
+            active_color=color.gray,
+        )
+        self._set_nav_button_state(
+            self.games_next_button,
+            enabled=(self.games_page + 1) * self.GAMES_PAGE_SIZE < len(self.games),
+            active_color=color.gray,
+        )
+
+    def _format_leaderboard_label(self, entry) -> str:
+        name = self._truncate(entry.model, 18)
+        return (
+            f"#{entry.rank:>2}  {name:<18}  {round(entry.rating):>4}"
+            f"  {entry.games:>2}  {entry.wins:>2}  {entry.draws:>2}  {entry.losses:>2}"
+        )
+
+    def _format_game_label(self, record) -> str:
+        matchup = f"#{record.index:>3} {self._truncate(record.white, 14)} vs {self._truncate(record.black, 14)}"
+        detail = f"{record.result}   {record.ply_count} plies"
+        return f"{matchup}\n{detail}"
+
+    @staticmethod
+    def _truncate(text: str, max_length: int) -> str:
+        if len(text) <= max_length:
+            return text
+        return f"{text[:max_length - 3]}..."
+
+    def _set_nav_button_state(self, button: Button | None, enabled: bool, active_color):
+        if not button:
+            return
+        button.disabled = not enabled
+        button.ignore_input = not enabled
+        button.color = active_color if enabled else color.dark_gray
+
+    def _import_pgn(self):
+        self.destroy_panel()
+        if self.on_import:
+            self.on_import()
+
+    def _open_game(self, record):
+        self.destroy_panel()
+        if self.on_open_game:
+            self.on_open_game(record)
+
+    def _go_back(self):
+        self.destroy_panel()
+        if self.on_back:
+            self.on_back()
+
+    def destroy_panel(self):
+        for entity in self.leaderboard_entities:
+            destroy(entity)
+        self.leaderboard_entities.clear()
+        for entity in self.game_entities:
+            destroy(entity)
+        self.game_entities.clear()
+        for entity in self.entities:
+            destroy(entity)
+        self.entities.clear()
+        self.leaderboard_page_text = None
+        self.games_page_text = None
+        self.leaderboard_prev_button = None
+        self.leaderboard_next_button = None
+        self.games_prev_button = None
+        self.games_next_button = None
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 #  SETTINGS PANEL
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -2224,7 +2624,7 @@ class GameHUD:
     FEN_PANEL_TOP_Y = -0.12
     FEN_PANEL_LEFT_PADDING = 0.01
 
-    def __init__(self, callbacks: dict):
+    def __init__(self, callbacks: dict, button_labels: list[str] | None = None):
         """
         callbacks keys:
             undo, redo, resign, offer_draw, flip, fen, save_pgn,
@@ -2233,6 +2633,9 @@ class GameHUD:
         self.entities: list[Entity] = []
         self.action_buttons: list[Button] = []
         self.callbacks = callbacks
+        self.button_labels = button_labels or [
+            "Undo", "Redo", "Flip", "Resign", "Draw", "FEN", "PGN", "Restart", "Menu",
+        ]
 
         # Text references for live updates
         self.status_text: Text | None = None
@@ -2315,16 +2718,21 @@ class GameHUD:
         self.entities.append(self.fen_text)
 
         # Toolbar buttons
+        callback_keys = {
+            "Undo": "undo",
+            "Redo": "redo",
+            "Flip": "flip",
+            "Resign": "resign",
+            "Draw": "offer_draw",
+            "FEN": "fen",
+            "PGN": "save_pgn",
+            "Restart": "restart",
+            "Menu": "back_to_menu",
+        }
         btn_defs = [
-            ("Undo",     self.callbacks.get("undo")),
-            ("Redo",     self.callbacks.get("redo")),
-            ("Flip",     self.callbacks.get("flip")),
-            ("Resign",   self.callbacks.get("resign")),
-            ("Draw",     self.callbacks.get("offer_draw")),
-            ("FEN",      self.callbacks.get("fen")),
-            ("PGN",      self.callbacks.get("save_pgn")),
-            ("Restart",  self.callbacks.get("restart")),
-            ("Menu",     self.callbacks.get("back_to_menu")),
+            (label, self.callbacks.get(callback_keys[label]))
+            for label in self.button_labels
+            if label in callback_keys
         ]
         bx = rx - 0.11
         for i, (label, cb) in enumerate(btn_defs):
@@ -2378,18 +2786,40 @@ class GameHUD:
         if self.black_clock_text:
             self.black_clock_text.text = f"{black_label}: {black_str}"
 
-    def update_move_list(self, moves: list[str]):
+    def update_move_list(self, moves: list[str], current_ply: int | None = None):
         if not self.move_list_text:
             return
         lines = []
         for i in range(0, len(moves), 2):
             num = i // 2 + 1
-            white_m = moves[i]
-            black_m = moves[i + 1] if i + 1 < len(moves) else ""
+            white_m = self._format_review_move(moves[i], i + 1, current_ply)
+            black_m = (
+                self._format_review_move(moves[i + 1], i + 2, current_ply)
+                if i + 1 < len(moves)
+                else ""
+            )
             lines.append(f"{num}. {white_m}  {black_m}")
-        # Keep last ~16 moves visible
-        visible = lines[-16:]
+        visible = self._visible_move_window(lines, current_ply)
         self.move_list_text.text = "Moves:\n" + "\n".join(visible)
+
+    @staticmethod
+    def _format_review_move(move_san: str, move_number: int, current_ply: int | None) -> str:
+        if current_ply is not None and move_number == current_ply:
+            return f"[{move_san}]"
+        return move_san
+
+    @staticmethod
+    def _visible_move_window(lines: list[str], current_ply: int | None) -> list[str]:
+        if len(lines) <= 16:
+            return lines
+        if current_ply is None:
+            return lines[-16:]
+
+        current_line = 0 if current_ply <= 0 else (current_ply - 1) // 2
+        start = max(0, current_line - 7)
+        end = min(len(lines), start + 16)
+        start = max(0, end - 16)
+        return lines[start:end]
 
     def update_eval(self, text: str, duration: float | None = None):
         if not self.eval_text:
