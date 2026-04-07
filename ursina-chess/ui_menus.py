@@ -2475,12 +2475,16 @@ class JoinDialog:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class HostDialog:
-    """Simple port / name input for hosting."""
+    """Port / name input for hosting, including clock and optional FEN."""
 
     def __init__(self, on_host, on_cancel):
+        """on_host(port: int, name: str, time_control: str, fen: str) -> str | None"""
         self.on_host = on_host
         self.on_cancel = on_cancel
         self.entities: list[Entity] = []
+        self.time_control = "No limit"
+        self.time_buttons: dict[str, Button] = {}
+        self.error_text: Text | None = None
         self._build()
 
     def _build(self):
@@ -2489,32 +2493,92 @@ class HostDialog:
         self.entities.append(bg)
 
         t = Text(text="Host Multiplayer", parent=camera.ui, scale=2,
-                  position=(0, 0.12), origin=(0, 0), z=0.3, color=color.white)
+                  position=(0, 0.22), origin=(0, 0), z=0.3, color=color.white)
         self.entities.append(t)
 
         port_label = Text(text="Port:", parent=camera.ui, scale=1.2,
-                           position=(-0.18, 0.05), origin=(-0.5, 0), z=0.3, color=color.white)
+                           position=(-0.25, 0.14), origin=(-0.5, 0), z=0.3, color=color.white)
         self.entities.append(port_label)
         self.port_field = InputField(default_value="25565", parent=camera.ui,
-                                      scale=(0.25, 0.04), position=(0.06, 0.05), z=0.3)
+                                      scale=(0.25, 0.04), position=(0.03, 0.14), z=0.3)
         self.entities.append(self.port_field)
 
         name_label = Text(text="Name:", parent=camera.ui, scale=1.2,
-                           position=(-0.18, -0.01), origin=(-0.5, 0), z=0.3, color=color.white)
+                           position=(-0.25, 0.08), origin=(-0.5, 0), z=0.3, color=color.white)
         self.entities.append(name_label)
         self.name_field = InputField(default_value="Host", parent=camera.ui,
-                                      scale=(0.25, 0.04), position=(0.06, -0.01), z=0.3)
+                                      scale=(0.25, 0.04), position=(0.03, 0.08), z=0.3)
         self.entities.append(self.name_field)
 
+        time_label = Text(text="Time Control:", parent=camera.ui, scale=1.1,
+                          position=(-0.25, 0.00), origin=(-0.5, 0), z=0.3, color=color.white)
+        self.entities.append(time_label)
+        time_choices = list(TIME_CONTROLS.keys())
+        for index, label in enumerate(time_choices):
+            columns = 3 if len(time_choices) > 3 else len(time_choices)
+            row = index // columns
+            col = index % columns
+            row_offset = -0.06 - row * 0.05
+            if row == 0:
+                x = -0.18 + col * 0.18
+            else:
+                x = -0.09 + col * 0.18
+            btn = Button(
+                text=label,
+                parent=camera.ui,
+                scale=(0.15, 0.038),
+                position=(x, row_offset),
+                z=0.3,
+                color=color.dark_gray,
+                on_click=Func(self._pick_time_control, label),
+            )
+            self.entities.append(btn)
+            self.time_buttons[label] = btn
+        self._pick_time_control(self.time_control)
+
+        fen_label = Text(text="Start FEN (optional):", parent=camera.ui, scale=1.0,
+                         position=(-0.25, -0.17), origin=(-0.5, 0), z=0.3, color=color.white)
+        self.entities.append(fen_label)
+        self.fen_field = InputField(default_value="", parent=camera.ui,
+                                     scale=(0.60, 0.045), position=(0.0, -0.23), z=0.3)
+        self.entities.append(self.fen_field)
+
+        fen_hint = Text(
+            text=_wrap_ui_text("Leave blank for the standard position. Custom FEN is synced to the opponent automatically.", 56),
+            parent=camera.ui,
+            scale=0.8,
+            position=(0, -0.30),
+            origin=(0, 0),
+            z=0.3,
+            color=color.light_gray,
+        )
+        self.entities.append(fen_hint)
+
+        self.error_text = Text(
+            text="",
+            parent=camera.ui,
+            scale=0.9,
+            position=(0, -0.36),
+            origin=(0, 0),
+            z=0.3,
+            color=color.rgb(1.0, 0.4, 0.4),
+        )
+        self.entities.append(self.error_text)
+
         host_btn = Button(text="Start Hosting", parent=camera.ui,
-                           scale=(0.18, 0.04), position=(-0.07, -0.09), z=0.3,
+                           scale=(0.18, 0.04), position=(-0.08, -0.43), z=0.3,
                            color=color.azure, on_click=Func(self._do_host))
         self.entities.append(host_btn)
 
         cancel_btn = Button(text="Cancel", parent=camera.ui,
-                             scale=(0.12, 0.04), position=(0.1, -0.09), z=0.3,
+                             scale=(0.12, 0.04), position=(0.10, -0.43), z=0.3,
                              color=color.gray, on_click=Func(self._do_cancel))
         self.entities.append(cancel_btn)
+
+    def _pick_time_control(self, label: str):
+        self.time_control = label
+        for option, button in self.time_buttons.items():
+            button.color = color.azure if option == label else color.dark_gray
 
     def _do_host(self):
         try:
@@ -2522,9 +2586,14 @@ class HostDialog:
         except ValueError:
             port = 25565
         name = self.name_field.text_field.text.strip() or "Host"
-        self.destroy_panel()
+        fen = self.fen_field.text_field.text.strip()
         if self.on_host:
-            self.on_host(port, name)
+            error = self.on_host(port, name, self.time_control, fen)
+            if error:
+                if self.error_text:
+                    self.error_text.text = error
+                return
+        self.destroy_panel()
 
     def _do_cancel(self):
         self.destroy_panel()

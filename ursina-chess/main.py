@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import sys
 import os
+import time
 import threading
 import chess
 import pyperclip
@@ -92,6 +93,8 @@ class ChessApp:
         self._review_move_list: list[str] = []
         self._review_final_result: str | None = None
         self._benchmark_dashboard_message: str = ""
+        self._last_multiplayer_sync_signature: tuple | None = None
+        self._last_multiplayer_sync_time: float = 0.0
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -108,6 +111,7 @@ class ChessApp:
 
         # Clock tick
         self.gs.tick_clock()
+        self._maybe_sync_live_multiplayer_state()
 
         # Apply engine move queued from bg thread
         if self._pending_engine_move is not None:
@@ -487,8 +491,18 @@ class ChessApp:
         self._hide_main_menu()
         HostDialog(on_host=self._start_hosting, on_cancel=self._show_main_menu)
 
-    def _start_hosting(self, port: int, name: str):
-        self.gs.new_game(mode=GameMode.MULTIPLAYER, time_control="No limit")
+    def _start_hosting(self, port: int, name: str,
+                       time_control: str, fen_text: str) -> str | None:
+        fen = fen_text.strip()
+        if fen:
+            try:
+                chess.Board(fen)
+            except ValueError as exc:
+                return f"Invalid FEN: {exc}"
+        else:
+            fen = None
+
+        self.gs.new_game(mode=GameMode.MULTIPLAYER, time_control=time_control, fen=fen)
         self._restart_state = None
         self._mp_takeback_request_pending = False
         self.gs.white_name = name
@@ -509,6 +523,7 @@ class ChessApp:
         self._setup_board_and_hud()
         if self.hud:
             self.hud.update_status("Waiting for opponent…")
+        return None
 
     def _on_join_mp(self):
         self._hide_main_menu()
@@ -589,20 +604,30 @@ class ChessApp:
     def _mp_move_rejected(self, reason: str):
         print(f"[Net] Move rejected: {reason}")
 
-    def _mp_state_synced(self, fen, last_uci, w_clock, b_clock, status, move_list_csv):
+    def _mp_state_synced(self, fen, last_uci, w_clock, b_clock, status, move_list_csv,
+                         time_control, starting_fen, result, resigned_color_int):
         """Client received full state from host."""
-        self.gs.set_fen(fen, clear_premove=False)
+        move_list = move_list_csv.split(",") if move_list_csv else []
+        resigned_color = None
+        if resigned_color_int in (0, 1):
+            resigned_color = chess.Color(resigned_color_int)
+
+        self.gs.sync_remote_state(
+            fen,
+            starting_fen=starting_fen or None,
+            time_control=time_control or "No limit",
+            white_clock=w_clock,
+            black_clock=b_clock,
+            move_list=move_list,
+            result=result or None,
+            resigned_color=resigned_color,
+            clear_premove=False,
+        )
         if last_uci:
             try:
                 self.gs.last_move = chess.Move.from_uci(last_uci)
             except Exception:
                 self.gs.last_move = None
-        self.gs.white_clock = w_clock
-        self.gs.black_clock = b_clock
-        if move_list_csv:
-            self.gs.move_list = move_list_csv.split(",")
-        else:
-            self.gs.move_list = []
         if self.board_view:
             self.board_view.refresh()
         self._try_execute_premove()
@@ -611,11 +636,17 @@ class ChessApp:
         """Host pushes current state to the client."""
         last_uci = self.gs.last_move.uci() if self.gs.last_move else ""
         move_csv = ",".join(self.gs.move_list)
+        result = self.gs.result or ""
+        resigned_color_int = int(self.gs.resigned_color) if self.gs.resigned_color is not None else -1
         self.net.send_state_sync(
             self.gs.fen, last_uci,
             self.gs.white_clock, self.gs.black_clock,
             self.gs.status_text, move_csv,
+            self.gs.time_control_label, self.gs.starting_fen,
+            result, resigned_color_int,
         )
+        self._last_multiplayer_sync_signature = self._multiplayer_sync_signature()
+        self._last_multiplayer_sync_time = time.monotonic()
 
     def _mp_draw_offered(self):
         print("[Net] Draw offered by opponent")
@@ -724,6 +755,8 @@ class ChessApp:
 
     def _mp_disconnected(self):
         self._clear_premove(refresh=True)
+        self._last_multiplayer_sync_signature = None
+        self._last_multiplayer_sync_time = 0.0
         if self.hud:
             self.hud.update_status("Opponent disconnected")
 
@@ -779,6 +812,8 @@ class ChessApp:
         self._dismiss_fen_editor_dialog()
         self._dismiss_promotion_dialog()
         self._mp_takeback_request_pending = False
+        self._last_multiplayer_sync_signature = None
+        self._last_multiplayer_sync_time = 0.0
         self._review_move_list = []
         self._review_final_result = None
         self.gs.clear_premove()
@@ -1007,6 +1042,10 @@ class ChessApp:
             return
 
         if self.gs.mode == GameMode.MULTIPLAYER:
+            if not self.net.connected or self.net.my_color is None:
+                if self.hud:
+                    self.hud.update_eval("Wait for the opponent to connect", duration=2.0)
+                return
             # Only allow moves on our turn
             if self.gs.board.turn != self.gs.player_color:
                 return
@@ -1042,6 +1081,35 @@ class ChessApp:
             if self.board_view:
                 self.board_view.refresh()
             self._try_execute_premove()
+
+    def _multiplayer_sync_signature(self) -> tuple:
+        return (
+            self.gs.fen,
+            round(self.gs.white_clock, 1),
+            round(self.gs.black_clock, 1),
+            self.gs.result,
+            int(self.gs.resigned_color) if self.gs.resigned_color is not None else -1,
+            len(self.gs.move_list),
+        )
+
+    def _maybe_sync_live_multiplayer_state(self):
+        if (
+            self.gs.mode != GameMode.MULTIPLAYER
+            or not self.net.is_hosting
+            or not self.net.connected
+            or self.gs.base_time <= 0
+        ):
+            return
+
+        signature = self._multiplayer_sync_signature()
+        if signature == self._last_multiplayer_sync_signature:
+            return
+
+        now = time.monotonic()
+        if not self.gs.result and now - self._last_multiplayer_sync_time < 0.2:
+            return
+
+        self._mp_sync_to_client()
 
     def _handle_promotion_needed(self, from_sq: int, to_sq: int):
         """Show promotion dialog, then complete the move."""

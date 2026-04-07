@@ -57,6 +57,20 @@ class GameState:
         self.result: Optional[str] = None               # "1-0", "0-1", "1/2-1/2"
         self.resigned_color: Optional[chess.Color] = None
 
+    def _configure_time_control(self, time_control: str, *, reset_clocks: bool):
+        self.time_control_label = time_control
+        base, inc = TIME_CONTROLS.get(time_control, (0, 0))
+        self.base_time = float(base)
+        self.increment = float(inc)
+        if reset_clocks:
+            self.white_clock = self.base_time
+            self.black_clock = self.base_time
+            self.clock_running = False
+            self._last_tick = 0.0
+
+    def set_time_control(self, time_control: str, *, reset_clocks: bool = True):
+        self._configure_time_control(time_control, reset_clocks=reset_clocks)
+
     # ── Setup / reset ─────────────────────────────────────────────────────────
     def new_game(self, mode: str = GameMode.LOCAL,
                  player_color: chess.Color = chess.WHITE,
@@ -78,15 +92,7 @@ class GameState:
         self.resigned_color = None
         self.white_name = "White"
         self.black_name = "Black"
-
-        self.time_control_label = time_control
-        base, inc = TIME_CONTROLS.get(time_control, (0, 0))
-        self.base_time = float(base)
-        self.increment = float(inc)
-        self.white_clock = self.base_time
-        self.black_clock = self.base_time
-        self.clock_running = False
-        self._last_tick = 0.0
+        self._configure_time_control(time_control, reset_clocks=True)
         self._check_result()
 
     # ── FEN helpers ───────────────────────────────────────────────────────────
@@ -94,9 +100,10 @@ class GameState:
     def fen(self) -> str:
         return self.board.fen()
 
-    def set_fen(self, fen: str, *, clear_premove: bool = True):
+    def set_fen(self, fen: str, *, clear_premove: bool = True,
+                starting_fen: Optional[str] = None):
         self.board.set_fen(fen)
-        self.starting_fen = fen
+        self.starting_fen = starting_fen or fen
         self.last_move = None
         self.move_list = []
         self._state_history = []
@@ -108,6 +115,41 @@ class GameState:
         self.clock_running = False
         self._last_tick = 0.0
         self._check_result()
+
+    def sync_remote_state(
+        self,
+        fen: str,
+        *,
+        starting_fen: Optional[str] = None,
+        time_control: str = "No limit",
+        white_clock: float = 0.0,
+        black_clock: float = 0.0,
+        move_list: Optional[List[str]] = None,
+        result: Optional[str] = None,
+        resigned_color: Optional[chess.Color] = None,
+        clear_premove: bool = True,
+    ):
+        """Apply a full multiplayer state snapshot received from the host."""
+        self.board.set_fen(fen)
+        self.starting_fen = starting_fen or fen
+        self.last_move = None
+        self.move_list = list(move_list or [])
+        self._state_history = []
+        self._redo_stack = []
+        if clear_premove:
+            self.clear_premove()
+
+        self.result = None
+        self.resigned_color = None
+        self._configure_time_control(time_control, reset_clocks=False)
+        self.white_clock = white_clock
+        self.black_clock = black_clock
+        self._check_result()
+        if result:
+            self.result = result
+            self.resigned_color = resigned_color
+        self.clock_running = self.base_time > 0 and bool(self.move_list) and not self.result
+        self._last_tick = time.time() if self.clock_running else 0.0
 
     def load_pgn(self, pgn_text: str, mode: str = GameMode.LOCAL,
                  player_color: chess.Color = chess.WHITE,

@@ -9,10 +9,10 @@ A fully-featured desktop chess application built with the **Ursina** game engine
 - **Click-based interaction** with legal-move highlighting, last-move highlighting, and check highlighting
 - **Pawn promotion dialog** with piece selection
 - **Board flip** support
-- **Time controls**: No limit, 10+0, 5+3, 3+2, 1+0
+- **Time controls**: No limit, 10+0, 5+3, 3+2, 1+0, including online multiplayer
 - **Engine integration** (Stockfish via UCI): adjustable skill level, depth, and time per move
 - **Auto-download Stockfish** on first launch (detects OS/architecture)
-- **Multiplayer** via `ursina.networking` (RPCPeer) — host-authoritative model
+- **Multiplayer** via `ursina.networking` (RPCPeer) — host-authoritative model with optional timed games and custom FEN starts
 - **PGN export** and **FEN copy** to clipboard
 - **Resign** and **draw offer** support
 - **Move list** and **engine evaluation** display
@@ -70,14 +70,16 @@ Choose White or Black. Stockfish responds automatically after your move. Adjust 
 **Host:**
 1. Click "Host Multiplayer"
 2. Enter a port (default 25565) and your name
-3. Share your IP with the other player
+3. Choose a time control or keep "No limit"
+4. Optionally paste a FEN to start the online game from a custom position
+5. Share your IP with the other player
 
 **Join:**
 1. Click "Join Multiplayer"
 2. Enter the host's IP, port, and your name
 3. Click "Join"
 
-The host always plays White. The connection uses TCP via `ursina.networking.RPCPeer`. The host validates all moves server-side.
+The host always plays White. The connection uses TCP via `ursina.networking.RPCPeer`. The host validates all moves server-side and synchronizes the live clocks, current FEN, and original starting FEN to the client.
 
 ## Engine Download
 
@@ -125,7 +127,7 @@ Accessible from the main menu. Configures:
 |------------------|-----------------|--------------------------------------------|
 | `hello`          | Client → Host   | player name (str)                          |
 | `assign_color`   | Host → Client   | color (int), host name (str)               |
-| `sync_state`     | Host → Client   | FEN, last move UCI, clocks, status, moves  |
+| `sync_state`     | Host → Client   | FEN, last move UCI, clocks, status, moves, time control, starting FEN, result |
 | `request_move`   | Client → Host   | UCI move (str)                             |
 | `move_accepted`  | Host → Client   | UCI move (str), SAN (str)                  |
 | `move_rejected`  | Host → Client   | reason (str)                               |

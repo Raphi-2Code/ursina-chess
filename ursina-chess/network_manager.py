@@ -9,7 +9,8 @@ Host-authoritative model:
 RPC message catalogue
   hello           – client → host (player name)
   assign_color    – host → client (color, host_name)
-  sync_state      – host → client (FEN, last_move_uci, w_clock, b_clock, status, move_list_csv)
+  sync_state      – host → client (FEN, last_move_uci, w_clock, b_clock, status,
+                     move_list_csv, time_control, starting_fen, result, resigned_color_int)
   request_move    – client → host (uci_move)
   move_accepted   – host → client (uci_move, san)
   move_rejected   – host → client (reason)
@@ -55,7 +56,7 @@ class NetworkManager:
         # Callbacks the UI / main loop should set
         self.on_connected: Optional[Callable] = None          # ()
         self.on_disconnected: Optional[Callable] = None       # ()
-        self.on_state_synced: Optional[Callable] = None       # (fen, last_uci, w_clock, b_clock, status, move_list)
+        self.on_state_synced: Optional[Callable] = None       # (fen, last_uci, w_clock, b_clock, status, move_list, time_control, starting_fen, result, resigned_color_int)
         self.on_color_assigned: Optional[Callable] = None     # (color, opponent_name)
         self.on_move_accepted: Optional[Callable] = None      # (uci, san)
         self.on_move_rejected: Optional[Callable] = None      # (reason)
@@ -132,14 +133,17 @@ class NetworkManager:
 
     def send_state_sync(self, fen: str, last_uci: str,
                         w_clock: float, b_clock: float,
-                        status: str, move_list_csv: str):
+                        status: str, move_list_csv: str,
+                        time_control: str, starting_fen: str,
+                        result: str, resigned_color_int: int):
         """Host broadcasts state to client."""
         conn = self._client_conn
         if conn and self.peer:
             move_count = len(move_list_csv.split(",")) if move_list_csv else 0
             print(f"[Net] -> sync_state last={last_uci or '-'} moves={move_count} status={status}")
             self.peer.sync_state(conn, fen, last_uci,
-                                 w_clock, b_clock, status, move_list_csv)
+                                 w_clock, b_clock, status, move_list_csv,
+                                 time_control, starting_fen, result, resigned_color_int)
 
     def send_move_accepted(self, uci: str, san: str):
         conn = self._client_conn
@@ -252,13 +256,16 @@ class NetworkManager:
         def sync_state(connection, time_received,
                        fen: str, last_uci: str,
                        w_clock: float, b_clock: float,
-                       status: str, move_list_csv: str):
+                       status: str, move_list_csv: str,
+                       time_control: str, starting_fen: str,
+                       result: str, resigned_color_int: int):
             if not nm.is_host_flag:
                 move_count = len(move_list_csv.split(",")) if move_list_csv else 0
                 print(f"[Net] <- sync_state last={last_uci or '-'} moves={move_count} status={status}")
                 if nm.on_state_synced:
                     nm.on_state_synced(fen, last_uci, w_clock, b_clock,
-                                       status, move_list_csv)
+                                       status, move_list_csv, time_control,
+                                       starting_fen, result, resigned_color_int)
 
         # ── request_move (client → host) ─────────────────────────────────
         @rpc(peer)
